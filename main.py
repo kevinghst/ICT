@@ -19,6 +19,7 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 import torchvision.datasets
+from tensorboardX import SummaryWriter
 
 from collections import OrderedDict
 import sys
@@ -115,7 +116,7 @@ parser.add_argument('--n_cpus', default=0, type=int,
                     help='number of cpus for data loading')
 parser.add_argument('--job_id', type=str, default='')
 parser.add_argument('--add_name', type=str, default='')
-
+parser.add_argument('--out', type=str, default='results')
 
 args = parser.parse_args()
 print (args)
@@ -356,6 +357,7 @@ def main():
     out_str = str(args)
     filep.write(out_str + '\n')     
     
+    writer = SummaryWriter(args.out)
    
     
     if args.evaluate:
@@ -378,11 +380,13 @@ def main():
             if args.pseudo_label == 'single':
                 print("Evaluating the primary model on validation set:\n")
                 filep.write("Evaluating the primary model on validation set:\n")
-                prec1 = validate(validloader, model, global_step, epoch + 1, filep)
+                prec1, val_loss = validate(validloader, model, global_step, epoch + 1, filep)
+                writer.add_scalar('accuracy/val_acc', prec1, (epoch+1) * len(unlabelledloader))
+                writer.add_scalar('losses/val_loss', val_loss, (epoch+1) * len(unlabelledloader))
             else:
                 print("Evaluating the EMA model on validation set:\n")
                 filep.write("Evaluating the EMA model on validation set:\n")
-                ema_prec1 = validate(validloader, ema_model, global_step, epoch + 1, filep, ema= True)
+                ema_prec1, val_loss = validate(validloader, ema_model, global_step, epoch + 1, filep, ema= True)
             print("--- validation in %s seconds ---\n" % (time.time() - start_time))
             filep.write("--- validation in %s seconds ---\n" % (time.time() - start_time))
             if args.pseudo_label == 'single':
@@ -396,11 +400,11 @@ def main():
                 if args.pseudo_label == 'single':
                     print("Evaluating the primary model on test set:\n")
                     filep.write("Evaluating the primary model on test set:\n")
-                    best_test_prec1 = validate(testloader, model, global_step, epoch + 1, filep, testing = True)
+                    best_test_prec1, val_loss = validate(testloader, model, global_step, epoch + 1, filep, testing = True)
                 else:
                     print("Evaluating the EMA model on test set:\n")
                     filep.write("Evaluating the EMA model on test set:\n")
-                    best_test_ema_prec1 = validate(testloader, ema_model, global_step, epoch + 1, filep, ema= True, testing = True)
+                    best_test_ema_prec1, val_loss = validate(testloader, ema_model, global_step, epoch + 1, filep, ema= True, testing = True)
                 print("--- testing in %s seconds ---\n" % (time.time() - start_time))
                 filep.write("--- testing in %s seconds ---\n" % (time.time() - start_time))
         
@@ -639,6 +643,7 @@ def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, file
         ema_class_loss = class_criterion(ema_logit_labeled, target_var)# / minibatch_size
         meters.update('ema_class_loss', ema_class_loss.item())
         
+        writer.add_scalar('losses/sup_loss', class_loss.item(), i + len(unlabelledloader)*epoch)
                
         ### get the unsupervised mixup loss###
         if args.mixup_consistency:
@@ -660,7 +665,10 @@ def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, file
                 else:
                     mixup_consistency_weight = get_current_consistency_weight(args.mixup_consistency, epoch, i, len(unlabelledloader))
                 meters.update('mixup_cons_weight', mixup_consistency_weight)
+                writer.add_scalar('losses/unsup_loss', mixup_consistency_loss.item(), i + len(unlabelledloader)*epoch)
+                writer.add_scalar('losses/unsup_weight', mixup_consistency_weight, i + len(unlabelledloader)*epoch)
                 mixup_consistency_loss = mixup_consistency_weight*mixup_consistency_loss
+                writer.add_scalar('losses/weighted_unsup_loss', mixup_consistency_loss.item(), i + len(unlabelledloader)*epoch)
         else:
             mixup_consistency_loss = 0
             meters.update('mixup_cons_loss', 0)
@@ -669,8 +677,8 @@ def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, file
         #assert labeled_minibatch_size > 0
         
         
-        
         loss = class_loss + mixup_consistency_loss
+        writer.add_scalar('losses/train_loss', loss.item(), i + len(unlabelledloader)*epoch)
         meters.update('loss', loss.item())
 
         prec1, prec5 = accuracy(class_logit.data, target_var.data, topk=(1, 5))
@@ -782,7 +790,7 @@ def validate(eval_loader, model, global_step, epoch, filep, ema = False, testing
             val_error_list.append(meters['error1'].avg)
     
     
-    return meters['top1'].avg
+    return meters['top1'].avg, meters['class_loss'].avg
 
 
 def save_checkpoint(state, is_best, dirpath, epoch):
