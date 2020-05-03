@@ -8,6 +8,7 @@ from itertools import repeat, cycle
 import matplotlib as mpl
 mpl.use('Agg')
 
+import pdb
 import logging
 
 import numpy as np
@@ -642,7 +643,7 @@ def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, file
         
         ema_class_loss = class_criterion(ema_logit_labeled, target_var)# / minibatch_size
         meters.update('ema_class_loss', ema_class_loss.item())
-        
+        pdb.set_trace()
         writer.add_scalar('losses/sup_loss', class_loss.item(), i + len(unlabelledloader)*epoch)
                
         ### get the unsupervised mixup loss###
