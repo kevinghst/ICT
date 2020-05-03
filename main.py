@@ -570,7 +570,7 @@ def train_sl(trainloader, model, optimizer, epoch, filep):
     
 
 
-def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, filep, writer):
+def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, filep):
     global global_step
     
     class_criterion = nn.CrossEntropyLoss().cuda()
