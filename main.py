@@ -360,7 +360,7 @@ def main():
     filep.write(out_str + '\n')     
     
     writer = SummaryWriter(args.out)
-    logger = Logger(os.path.join(args.out, 'log.txt'), title=title)
+    logger = Logger(os.path.join(args.out, 'log.txt'), title='ict')
     logger.set_names(['Train Loss', 'Train Loss X', 'Train Loss U', 'Train Loss W U', 'Valid Acc', 'Valid Loss', 'LR'])
     
     if args.evaluate:
