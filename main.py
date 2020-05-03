@@ -385,7 +385,6 @@ def main():
 
         print("--- training epoch in %s seconds ---\n" % (time.time() - start_time))
         filep.write("--- training epoch in %s seconds ---\n" % (time.time() - start_time))
-        pdb.set_trace()
         if args.evaluation_epochs and (epoch + 1) % args.evaluation_epochs == 0:
             start_time = time.time()
             if args.pseudo_label == 'single':
