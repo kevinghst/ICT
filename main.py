@@ -372,7 +372,7 @@ def main():
         if args.sl:
             train_sl(trainloader, model, optimizer, epoch, filep)
         else:
-            train(trainloader, unlabelledloader, model, ema_model, optimizer, epoch, filep)
+            train(trainloader, unlabelledloader, model, ema_model, optimizer, epoch, filep, writer)
         print("--- training epoch in %s seconds ---\n" % (time.time() - start_time))
         filep.write("--- training epoch in %s seconds ---\n" % (time.time() - start_time))
         if args.evaluation_epochs and (epoch + 1) % args.evaluation_epochs == 0:
@@ -556,7 +556,7 @@ def train_sl(trainloader, model, optimizer, epoch, filep):
     
 
 
-def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, filep):
+def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, filep, writer):
     global global_step
     
     class_criterion = nn.CrossEntropyLoss().cuda()
