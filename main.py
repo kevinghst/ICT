@@ -34,6 +34,7 @@ from mean_teacher.run_context import RunContext
 from mean_teacher.data import NO_LABEL
 from mean_teacher.utils import *
 from utils import *
+from logger import *
 from networks.wide_resnet import *
 from networks.lenet import *
 
@@ -359,7 +360,8 @@ def main():
     filep.write(out_str + '\n')     
     
     writer = SummaryWriter(args.out)
-   
+    logger = Logger(os.path.join(args.out, 'log.txt'), title=title)
+    logger.set_names(['Train Loss', 'Train Loss X', 'Train Loss U', 'Train Loss W U', 'Valid Acc', 'Valid Loss', 'LR'])
     
     if args.evaluate:
         print("Evaluating the primary model:\n")
@@ -369,11 +371,18 @@ def main():
         return
 
     for epoch in range(args.start_epoch, args.epochs):
+        steps_so_far = (epoch+1)*len(unlabelledloader)
         start_time = time.time()
         if args.sl:
             train_sl(trainloader, model, optimizer, epoch, filep)
         else:
-            train(trainloader, unlabelledloader, model, ema_model, optimizer, epoch, filep, writer)
+            sup_loss, unsup_loss, w, unsup_w_loss, loss, lr = train(trainloader, unlabelledloader, model, ema_model, optimizer, epoch, filep)
+            writer.add_scalar('losses/train_loss', loss, steps_so_far)
+            writer.add_scalar('losses/train_loss_x', sup_loss, steps_so_far)
+            writer.add_scalar('losses/train_loss_u', unsup_loss, steps_so_far)
+            writer.add_scalar('losses/train_loss_w_u', unsup_w_loss, steps_so_far)
+            writer.add_scalar('rate/lr', lr, steps_so_far)
+
         print("--- training epoch in %s seconds ---\n" % (time.time() - start_time))
         filep.write("--- training epoch in %s seconds ---\n" % (time.time() - start_time))
         if args.evaluation_epochs and (epoch + 1) % args.evaluation_epochs == 0:
@@ -382,8 +391,9 @@ def main():
                 print("Evaluating the primary model on validation set:\n")
                 filep.write("Evaluating the primary model on validation set:\n")
                 prec1, val_loss = validate(validloader, model, global_step, epoch + 1, filep)
-                writer.add_scalar('accuracy/val_acc', prec1, (epoch+1) * len(unlabelledloader))
-                writer.add_scalar('losses/val_loss', val_loss, (epoch+1) * len(unlabelledloader))
+                writer.add_scalar('accuracy/valid_acc', prec1, steps_so_far)
+                writer.add_scalar('losses/valid_loss', val_loss, steps_so_far)
+                logger.append([loss, sup_loss, unsup_loss, unsup_w_loss, prec1, val_loss, lr])
             else:
                 print("Evaluating the EMA model on validation set:\n")
                 filep.write("Evaluating the EMA model on validation set:\n")
@@ -446,6 +456,9 @@ def main():
         
         filep.flush()
         pickle.dump(train_log, open( os.path.join(exp_dir,'log.pkl'), 'wb'))
+
+    writer.close()
+    logger.close()
         
 def parse_dict_args(**kwargs):
     global args
@@ -643,9 +656,7 @@ def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, file
         
         ema_class_loss = class_criterion(ema_logit_labeled, target_var)# / minibatch_size
         meters.update('ema_class_loss', ema_class_loss.item())
-        pdb.set_trace()
-        writer.add_scalar('losses/sup_loss', class_loss.item(), i + len(unlabelledloader)*epoch)
-               
+
         ### get the unsupervised mixup loss###
         if args.mixup_consistency:
                 if args.mixup_hidden:
@@ -666,10 +677,8 @@ def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, file
                 else:
                     mixup_consistency_weight = get_current_consistency_weight(args.mixup_consistency, epoch, i, len(unlabelledloader))
                 meters.update('mixup_cons_weight', mixup_consistency_weight)
-                writer.add_scalar('losses/unsup_loss', mixup_consistency_loss.item(), i + len(unlabelledloader)*epoch)
-                writer.add_scalar('losses/unsup_weight', mixup_consistency_weight, i + len(unlabelledloader)*epoch)
                 mixup_consistency_loss = mixup_consistency_weight*mixup_consistency_loss
-                writer.add_scalar('losses/weighted_unsup_loss', mixup_consistency_loss.item(), i + len(unlabelledloader)*epoch)
+                meters.update('mixup_cons_w_loss', mixup_consistency_loss.item())
         else:
             mixup_consistency_loss = 0
             meters.update('mixup_cons_loss', 0)
@@ -679,7 +688,6 @@ def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, file
         
         
         loss = class_loss + mixup_consistency_loss
-        writer.add_scalar('losses/train_loss', loss.item(), i + len(unlabelledloader)*epoch)
         meters.update('loss', loss.item())
 
         prec1, prec5 = accuracy(class_logit.data, target_var.data, topk=(1, 5))
@@ -734,7 +742,8 @@ def train(trainloader,unlabelledloader, model, ema_model, optimizer, epoch, file
     train_error_list.append(meters['error1'].avg)
     train_ema_error_list.append(meters['ema_error1'].avg)
     train_lr_list.append(meters['lr'].avg)
-    
+
+    return meters['class_loss'].avg, meters['mixup_cons_loss'].avg, meters['mixup_cons_weight'].avg, meters['mixup_cons_w_loss'].avg, meters['loss'].avg, meters['lr'].avg
 
 def validate(eval_loader, model, global_step, epoch, filep, ema = False, testing = False):
     class_criterion = nn.CrossEntropyLoss(reduction='sum', ignore_index=NO_LABEL).cuda()
