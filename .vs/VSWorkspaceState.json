@@ -1,6 +1,7 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\mean_teacher"
   ],
   "SelectedNode": "\\main.py",
   "PreviewInSolutionExplorer": false

@@ -361,7 +361,10 @@ def main():
     
     writer = SummaryWriter(args.out)
     logger = Logger(os.path.join(args.out, 'log.txt'), title='ict')
-    logger.set_names(['Train Loss', 'Train Loss X', 'Train Loss U', 'Train Loss W U', 'Valid Acc', 'Valid Loss', 'LR'])
+    if args.sl:
+        logger.set_names(['Train Loss', 'Valid Acc', 'Valid Loss', 'LR'])
+    else:
+        logger.set_names(['Train Loss', 'Train Loss X', 'Train Loss U', 'Train Loss W U', 'Valid Acc', 'Valid Loss', 'LR'])
     
     if args.evaluate:
         print("Evaluating the primary model:\n")
@@ -374,7 +377,9 @@ def main():
         steps_so_far = (epoch+1)*len(unlabelledloader)
         start_time = time.time()
         if args.sl:
-            train_sl(trainloader, model, optimizer, epoch, filep)
+            loss, lr = train_sl(trainloader, model, optimizer, epoch, filep)
+            writer.add_scalar('losses/train_loss', loss, steps_so_far)
+            writer.add_scalar('rate/lr', lr, steps_so_far)
         else:
             sup_loss, unsup_loss, w, unsup_w_loss, loss, lr = train(trainloader, unlabelledloader, model, ema_model, optimizer, epoch, filep)
             writer.add_scalar('losses/train_loss', loss, steps_so_far)
@@ -393,7 +398,10 @@ def main():
                 prec1, val_loss = validate(validloader, model, global_step, epoch + 1, filep)
                 writer.add_scalar('accuracy/valid_acc', prec1, steps_so_far)
                 writer.add_scalar('losses/valid_loss', val_loss, steps_so_far)
-                logger.append([loss, sup_loss, unsup_loss, unsup_w_loss, prec1, val_loss, lr])
+                if args.sl:
+                    logger.append([loss, prec1, val_loss, lr])
+                else:
+                    logger.append([loss, sup_loss, unsup_loss, unsup_w_loss, prec1, val_loss, lr])
             else:
                 print("Evaluating the EMA model on validation set:\n")
                 filep.write("Evaluating the EMA model on validation set:\n")
@@ -567,6 +575,8 @@ def train_sl(trainloader, model, optimizer, epoch, filep):
     train_class_loss_list.append(meters['class_loss'].avg)
     train_error_list.append(meters['error1'].avg)
     train_lr_list.append(meters['lr'].avg)
+
+    return meters['class_loss'].avg, meters['lr'].avg
     
 
 
