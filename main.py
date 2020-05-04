@@ -514,7 +514,7 @@ def train_sl(trainloader, model, optimizer, epoch, filep):
         
         lr = adjust_learning_rate(optimizer, epoch, i, len(unlabelledloader))
         meters.update('lr', optimizer.param_groups[0]['lr'])
-        input_var = torch.autograd.Variable(input)
+        input_var = torch.autograd.Variable(input.cuda())
         target_var = torch.autograd.Variable(target.cuda(async=True))
 
         minibatch_size = len(target_var)
